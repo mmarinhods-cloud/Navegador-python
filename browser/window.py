@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout
 from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
-from .components.url_bar import AnimatedUrlBar
+from .components.url_bar import URLBar
 from .components.tabs import CustomTabBar
 from .components.dialogs import MacInputDialog
 from .core.interceptor import AdBlockerInterceptor
@@ -21,6 +21,7 @@ class AdvancedMacBrowser(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Matheus browser")
+        self.setMinimumSize(400, 300)
         
         # Carregar configurações
         self.settings = get_settings()
@@ -98,37 +99,54 @@ class AdvancedMacBrowser(QMainWindow):
 
     def restore_window_state(self):
         geom = self.settings.get("geometry")
+        maximized = self.settings.get("maximized", True)
+
+        on_screen = False
         if geom:
-            # Validar se a geometria está dentro de alguma tela visível
             rect = QRect(geom[0], geom[1], geom[2], geom[3])
-            on_screen = False
+            title_rect = QRect(rect.x(), rect.y(), 100, 50)
+            
             for screen in QApplication.screens():
-                if screen.geometry().intersects(rect):
+                if screen.geometry().intersects(title_rect):
                     on_screen = True
                     break
             
             if on_screen:
-                self.setGeometry(rect)
+                if maximized:
+                    # Para janelas que vão maximizar, apenas pre-setamos o tamanho/posição de restauração
+                    # sem chamar setGeometry completo para evitar avisos no Windows
+                    self.resize(rect.size())
+                    self.move(rect.topLeft())
+                else:
+                    self.setGeometry(rect)
             else:
                 self.resize(1280, 850)
-                self.center_on_screen()
         else:
             self.resize(1280, 850)
-            self.center_on_screen()
 
-        if self.settings.get("maximized", True):
-            QTimer.singleShot(10, self.start_maximized)
+        # Aplicar tema ANTES de mostrar para evitar flickering, mas sem margens ainda
+        self.apply_theme_stylesheet()
+
+        if maximized:
+            self.btn_win_max.setText("⤡")
+            self.central_layout.setContentsMargins(0, 0, 0, 0)
+            self.showMaximized()
         else:
+            self.btn_win_max.setText("⤢")
+            self.central_layout.setContentsMargins(10, 10, 10, 10)
             self.show()
+            if not on_screen:
+                self.center_on_screen()
 
     def center_on_screen(self):
         screen = QApplication.primaryScreen().availableGeometry()
-        size = self.geometry()
-        x = (screen.width() - size.width()) // 2
-        y = (screen.height() - size.height()) // 2
+        geo = self.geometry()
+        x = (screen.width() - geo.width()) // 2
+        y = (screen.height() - geo.height()) // 2
         self.move(x, y)
 
     def save_window_state(self):
+        # Apenas salvar geometria se a janela não estiver maximizada
         if not self.isMaximized():
             geom = self.geometry()
             self.settings["geometry"] = [geom.x(), geom.y(), geom.width(), geom.height()]
@@ -156,7 +174,6 @@ class AdvancedMacBrowser(QMainWindow):
         
         self.btn_new_tab = QPushButton("＋")
         self.btn_new_tab.setFixedSize(28, 28)
-        self.btn_new_tab.setMinimumSize(28, 28)
         self.btn_new_tab.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.btn_new_tab.setObjectName("btn_add_tab_top")
         self.btn_new_tab.clicked.connect(lambda: self.add_new_tab(QUrl("https://www.google.com"), "Nova Aba"))
@@ -216,7 +233,7 @@ class AdvancedMacBrowser(QMainWindow):
             btn.setFixedSize(32, 32)
             btn.setObjectName("btn_nav")
 
-        self.url_bar = AnimatedUrlBar()
+        self.url_bar = URLBar()
         self.url_bar.setPlaceholderText("Busque ou digite uma URL...")
         self.url_bar.returnPressed.connect(self.navigate_to_url)
 
@@ -255,7 +272,8 @@ class AdvancedMacBrowser(QMainWindow):
     def adjust_plus_button_position(self):
         max_allowed_width = self.width() - 240
         if max_allowed_width > 0:
-            self.tabs_container_widget.setFixedWidth(max_allowed_width)
+            self.tabs_container_widget.setMaximumWidth(max_allowed_width)
+            self.tabs_container_widget.setMinimumWidth(0)
 
     def check_border_position(self, pos):
         if self.isMaximized():
@@ -321,7 +339,8 @@ class AdvancedMacBrowser(QMainWindow):
                 geo = self.initial_geometry
                 
                 x, y, w, h = geo.x(), geo.y(), geo.width(), geo.height()
-                min_w, min_h = 800, 500 # Valores de segurança
+                min_w = self.minimumSize().width()
+                min_h = self.minimumSize().height()
 
                 if "left" in self.resize_direction:
                     nw = w - diff.x()
@@ -419,12 +438,6 @@ class AdvancedMacBrowser(QMainWindow):
             
         self.apply_theme_stylesheet()
         self.save_window_state()
-
-    def start_maximized(self):
-        self.showMaximized()
-        self.btn_win_max.setText("⤡")
-        self.central_layout.setContentsMargins(0, 0, 0, 0)
-        self.apply_theme_stylesheet()
 
     def show_settings_menu(self):
         menu = QMenu(self)

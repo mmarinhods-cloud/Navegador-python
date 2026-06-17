@@ -231,27 +231,35 @@ class CustomTabBar(QWidget):
         num_tabs = len(self.tabs_list)
         if num_tabs == 0: return
 
-        main_win = self.window()
-        if main_win and main_win.width() > 100:
-            max_available_space = main_win.width() - 240
+        # Obter o widget pai (tabs_container_widget) para saber o espaço real disponível
+        container = self.parentWidget()
+        if container:
+            # O container já tem um setMaximumWidth definido pelo adjust_plus_button_position (self.width() - 240)
+            max_available_space = container.width()
         else:
-            max_available_space = 800
+            # Fallback caso não consiga acessar o parent
+            main_win = self.window()
+            max_available_space = (main_win.width() - 240) if main_win else 800
 
-        max_tabs_space = max_available_space - 40
-        target_width = int(max_tabs_space / num_tabs)
-        target_width = max(45, min(180, target_width))
+        # Espaço reservado para o botão "+" (aprox 40px) e margens
+        max_tabs_space = max_available_space - 45
         
-        total_needed_width = 0
+        # Cálculo inteligente da largura:
+        # Se houver poucas abas, elas tentam manter um tamanho agradável (max 200px)
+        # Se houver muitas, elas encolhem até o mínimo (min 45px)
+        target_width = int(max_tabs_space / num_tabs) - 6 # Descontando o spacing do layout
+        target_width = max(45, min(200, target_width))
+        
+        total_used_width = 0
         for tab in self.tabs_list:
             try:
+                # Usamos setFixedWidth aqui para forçar o tamanho calculado para cada aba
+                # permitindo que elas preencham o espaço de forma uniforme
                 tab.setFixedWidth(target_width)
-                total_needed_width += target_width + 6
+                total_used_width += target_width + 6
             except RuntimeError:
                 continue
 
-        if total_needed_width > max_tabs_space:
-            self.setFixedWidth(max_tabs_space)
-        else:
-            self.setFixedWidth(total_needed_width)
-            
+        # Ajusta o tamanho da própria TabBar para não ocupar mais que o necessário
+        self.setFixedWidth(total_used_width)
         self.layoutUpdated.emit()
